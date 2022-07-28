@@ -1,0 +1,57 @@
+{
+	"folders":
+	[
+		{
+			"path": ".",
+		}
+	],
+	"settings": {
+		"cmake": {
+			"build_folder": "${project_path}/build",
+		},
+		"sublimegdb_commandline": "gdb --interpreter=mi /home/bumbuna/hesabati/build/hesabati",
+		"sublimegdb_arguments": "2+2+",
+		"sublimegdb_workingdir":"/home/bumbuna/hesabati"
+	},
+	"build_systems":
+	[
+		{
+			"file_regex": "(.+[^:]):(\\d+):(\\d+): (?:fatal )?((?:error|warning): .+)$",
+			"name": "hesabati (Linux)",
+			"shell_cmd": "make -j4",
+			"syntax": "Packages/CMakeBuilder/Syntax/Make.sublime-syntax",
+			"variants":
+			[
+				{
+					"name": "clean",
+					"shell_cmd": "make -j4 clean",
+				},
+				{
+					"name": "rebuild_cache",
+					"shell_cmd": "make -j4 rebuild_cache",
+				},
+				{
+					"name": "test",
+					"shell_cmd": "make -j4 test",
+				},
+				{
+					"name": "hesabati",
+					"shell_cmd": "make -j4 hesabati",
+				},
+				{
+					"name": "hesabati.o",
+					"shell_cmd": "make -j4 hesabati.o",
+				},
+				{
+					"name": "hesabati.i",
+					"shell_cmd": "make -j4 hesabati.i",
+				},
+				{
+					"name": "hesabati.s",
+					"shell_cmd": "make -j4 hesabati.s"
+				},
+			],
+			"working_dir": "${project_path}/build",
+		}
+	],
+}
