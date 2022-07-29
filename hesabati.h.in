@@ -1,0 +1,22 @@
+//Jacob Bumbuna <developer@devbumbuna.com>
+//2022
+
+#if !defined(HESABATI_H)
+#define HESABATI_H
+
+#define HESABATI_VERSION_MAJOR @CMAKE_PROJECT_VERSION_MAJOR@
+#define HESABATI_VERSION_MINOR @CMAKE_PROJECT_VERSION_MINOR@
+#define HESABATI_VERSION_PATCH @CMAKE_PROJECT_VERSION_PATCH@
+#define HESABATI_VERSION_TWEAK @CMAKE_PROJECT_VERSION_TWEAK@
+#define HESABATI_HOMEPAGE_URL  "@CMAKE_PROJECT_HOMEPAGE_URL@"
+
+enum RETURN_TYPE {
+    TYPE_NUM,
+    TYPE_DOUBLE,
+};
+typedef signed long hnum_t;
+typedef  double hdouble_t;
+typedef float hfloat_t;
+int
+hesabati(const char *, int *, void **);
+#endif //HESABATI_H

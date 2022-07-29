@@ -7,17 +7,20 @@
 #include <assert.h>
 #include <string.h>
 #include <sys/queue.h>
+#include <math.h>
+#include "hesabati.h"
+
 
 #define HESABATI
 
 enum HESABATI_TOKEN {
+    TK_NUMBER,
+    TK_DOUBLE,
+    TK_FLOAT,
     TK_PLUS,
     TK_MINUS,
     TK_DIVIDE,
     TK_TIMES,
-    TK_NUMBER,
-    TK_DOUBLE,
-    TK_FLOAT,
     TK_PARENOPEN,
     TK_PARENCLOSE,
     TK_END,
@@ -42,10 +45,6 @@ const char *const TK2STR[] = {
     "TK_PARENCLOSE",
     "TK_END",
 };
-
-typedef signed long hnum_t;
-typedef  double hdouble_t;
-typedef float hfloat_t;
 
 //tokenizer
 const char    *gl_lexeme;
@@ -163,167 +162,22 @@ struct HESABATI_PARSENODE {
     };
     struct HESABATI_PARSENODE *lchild;
     struct HESABATI_PARSENODE *rchild;
-    //in debug mode or when no allocator is present this field is used in
-    //level-order traversal of the tree.
-#if defined(HESABATI_DEBUG) || !defined(HESABATI_ALLOC)
+    //for use with the STAILQ macros
     STAILQ_ENTRY(HESABATI_PARSENODE) HESABATI_PARSENODE;
-#endif
 };
 
 //if no allocator is present use stdlib for heap allocation
 //and deallocation
-#if !defined(HESABATI_ALLOC)
 #define hesabati_malloc(sz) malloc(sz)
 #define hesabati_calloc(sz, n) calloc(sz, n)
 #define hesabati_free(p) free(p)
-#endif
 
 typedef struct HESABATI_PARSENODE* htree_ptr_t; 
 
-htree_ptr_t hesabati_plus();
-htree_ptr_t hesabati_minus();
-htree_ptr_t hesabati_times();
-htree_ptr_t hesabati_divide();
-htree_ptr_t hesabati_factor();
-
-//production 1
-htree_ptr_t
-hesabati_parse(const char *expression) {
-    gl_input = gl_input_ptr = expression;
-    ADVANCE();
-    htree_ptr_t root = NULL;
-    if(!MATCH(TK_END)) {
-        root = hesabati_plus();        
-    } 
-    if(g_hesabati_error && root) {
-#if !defined(HESABATI_ALLOC)
-        hesabati_free(root);
-#endif
-        root = NULL;
-    }
-    return root;
-}
-
-htree_ptr_t
-hesabati_plus() {
-    htree_ptr_t p = hesabati_minus();
-    while(MATCH(TK_PLUS)) {
-        ADVANCE();
-        htree_ptr_t np = hesabati_malloc(sizeof(*np));
-        np->type = TK_PLUS;
-        np->lchild = p;
-        if(!(np->rchild = hesabati_minus())) {
-#if !defined(HESABATI_ALLOC)
-            hesabati_free(np);
-#endif
-            return NULL;
-        }
-        p = np;
-    }
-    return p;
-}
-
-htree_ptr_t
-hesabati_minus() {
-    htree_ptr_t p = hesabati_times();
-    while(MATCH(TK_MINUS)) {
-        ADVANCE();
-        htree_ptr_t np = hesabati_malloc(sizeof(*np));
-        np->type = TK_MINUS;
-        np->lchild = p;
-        if(!(np->rchild = hesabati_times())) {
-#if !defined(HESABATI_ALLOC)
-            hesabati_free(np);
-#endif
-            return NULL;
-        };
-        p = np;
-    }
-    return p;
-}
-
-htree_ptr_t
-hesabati_times() {
-    htree_ptr_t p = hesabati_divide();
-    while(MATCH(TK_TIMES)) {
-        ADVANCE();
-        htree_ptr_t np = hesabati_malloc(sizeof(*np));
-        np->type = TK_TIMES;
-        np->lchild = p;
-        if(!(np->rchild = hesabati_divide())) {
-#if !defined(HESABATI_ALLOC)
-            hesabati_free(np);
-#endif
-            return NULL;
-        }
-        p = np;
-    }
-    return p;
-}
-
-htree_ptr_t
-hesabati_divide() {
-    htree_ptr_t p = hesabati_factor();
-    while(MATCH(TK_DIVIDE)) {
-        ADVANCE();
-        htree_ptr_t np = hesabati_malloc(sizeof(*np));
-        np->type = TK_DIVIDE;
-        np->lchild = p;
-        if(!(np->rchild = hesabati_factor())) {
-#if !defined(HESABATI_ALLOC)
-            hesabati_free(np);
-#endif
-            return NULL;
-        }
-        p = np;
-    }
-    return p;
-}
-
-htree_ptr_t
-hesabati_factor() {
-    if(MATCH(TK_PARENOPEN)) {
-        ADVANCE();
-        htree_ptr_t n = hesabati_plus();
-        if(!n) {
-            return NULL;
-        }
-        if(!MATCH(TK_PARENCLOSE)){
-#if !defined(HESABATI_ALLOC)
-            hesabati_free(n);
-#endif
-            g_hesabati_error = HESABATI_PERR_NO_CLOSEPAREN;
-            return NULL;
-        }
-        ADVANCE();
-        return n;
-    }
-    htree_ptr_t n = hesabati_malloc(sizeof(*n));
-    switch((n->type = gp_current_token)) {
-        case TK_NUMBER: n->ival = g_num; break;
-        case TK_DOUBLE: n->dval = g_double; break;
-        default: {
-            fprintf(stderr, "Unexpected token '%s'\n", TK2STR[gp_current_token]);
-#if !defined(HESABATI_ALLOC)
-            hesabati_free(n);
-#endif
-            g_hesabati_error = HESABATI_PERR_UNEXPECTED_TOKEN;
-            return NULL;
-        }
-    }
-    ADVANCE();
-    return n;
-}
-
-#if defined(HESABATI_ALLOC)
-void
-hesabati_cuttree(htree_ptr_t tree) {
-    hesabati_free(tree);
-}
-#else
 STAILQ_HEAD(qdel, HESABATI_PARSENODE);
 void
 hesabati_cuttree(htree_ptr_t tree) {
+    if(!tree) return;
     struct qdel qu;
     struct qdel *qu_ptr = &qu;
     STAILQ_INIT(qu_ptr);
@@ -340,13 +194,138 @@ hesabati_cuttree(htree_ptr_t tree) {
         hesabati_free(tree);
     }
 }
-#endif
+
+htree_ptr_t hesabati_plus();
+htree_ptr_t hesabati_minus();
+htree_ptr_t hesabati_times();
+htree_ptr_t hesabati_divide();
+htree_ptr_t hesabati_factor();
+
+//production 1
+htree_ptr_t
+hesabati_parse(const char *expression) {
+    gl_input = gl_input_ptr = expression;
+    ADVANCE();
+    htree_ptr_t root = NULL;
+    if(!MATCH(TK_END)) {
+        root = hesabati_plus();
+        if(!MATCH(TK_END)) {
+            g_hesabati_error = HESABATI_PERR_UNEXPECTED_TOKEN;
+        }
+    } 
+    if(g_hesabati_error) {
+        hesabati_cuttree(root);
+    }
+    return root;
+}
+
+htree_ptr_t
+hesabati_plus() {
+    htree_ptr_t p = hesabati_minus();
+    while(MATCH(TK_PLUS) && p) {
+        ADVANCE();
+        htree_ptr_t np = hesabati_malloc(sizeof(*np));
+        np->type = TK_PLUS;
+        np->lchild = p;
+        if(!(np->rchild = hesabati_minus())) {
+            hesabati_free(np);
+            hesabati_cuttree(p);
+            return NULL;
+        }
+        p = np;
+    }
+    return p;
+}
+
+htree_ptr_t
+hesabati_minus() {
+    htree_ptr_t p = hesabati_times();
+    while(MATCH(TK_MINUS) && p) {
+        ADVANCE();
+        htree_ptr_t np = hesabati_malloc(sizeof(*np));
+        np->type = TK_MINUS;
+        np->lchild = p;
+        if(!(np->rchild = hesabati_times())) {
+            hesabati_free(np);
+            hesabati_cuttree(p);
+            return NULL;
+        };
+        p = np;
+    }
+    return p;
+}
+
+htree_ptr_t
+hesabati_times() {
+    htree_ptr_t p = hesabati_divide();
+    while(MATCH(TK_TIMES) && p) {
+        ADVANCE();
+        htree_ptr_t np = hesabati_malloc(sizeof(*np));
+        np->type = TK_TIMES;
+        np->lchild = p;
+        if(!(np->rchild = hesabati_divide())) {
+            hesabati_free(np);
+            hesabati_cuttree(p);
+            return NULL;
+        }
+        p = np;
+    }
+    return p;
+}
+
+htree_ptr_t
+hesabati_divide() {
+    htree_ptr_t p = hesabati_factor();
+    while(MATCH(TK_DIVIDE) && p) {
+        ADVANCE();
+        htree_ptr_t np = hesabati_malloc(sizeof(*np));
+        np->type = TK_DIVIDE;
+        np->lchild = p;
+        if(!(np->rchild = hesabati_factor())) {
+            hesabati_free(np);
+            hesabati_cuttree(p);
+            return NULL;
+        }
+        p = np;
+    }
+    return p;
+}
+
+htree_ptr_t
+hesabati_factor() {
+    if(MATCH(TK_PARENOPEN)) {
+        ADVANCE();
+        htree_ptr_t n = hesabati_plus();
+        if(!n) {
+            return NULL;
+        }
+        if(!MATCH(TK_PARENCLOSE)){
+            hesabati_free(n);
+            g_hesabati_error = HESABATI_PERR_NO_CLOSEPAREN;
+            return NULL;
+        }
+        ADVANCE();
+        return n;
+    }
+    htree_ptr_t n = hesabati_calloc(1,sizeof(*n));
+    switch((n->type = gp_current_token)) {
+        case TK_NUMBER: n->ival = g_num; break;
+        case TK_DOUBLE: n->dval = g_double; break;
+        default: {
+            hesabati_free(n);
+            g_hesabati_error = HESABATI_PERR_UNEXPECTED_TOKEN;
+            return NULL;
+        }
+    }
+    ADVANCE();
+    return n;
+}
 
 #ifdef HESABATI_DEBUG
-#include <math.h>
 STAILQ_HEAD(queue_nodes, HESABATI_PARSENODE);
 void
 hesabati_printtree(htree_ptr_t root) {
+    if(!root) return;
     struct queue_nodes q;
     STAILQ_INIT(&q);
     STAILQ_INSERT_TAIL(&q, root, HESABATI_PARSENODE);
@@ -382,12 +361,17 @@ hbyte gi_stack[HESABATI_STACK_SIZE_IN_BYTES];
 hbyte *gi_stack_top = gi_stack; //upward growing, post-incremental push, pre-decremental pop
 hbyte gi_stack_types[HESABATI_STACK_SIZE_IN_BYTES/4];
 hbyte *gi_stack_types_top = gi_stack_types;
+#define GI_STACK_END (&gi_stack[HESABATI_STACK_SIZE_IN_BYTES])
 
-void
+int
 hesabati_stack_pushnum(hnum_t n) {
+    if(gi_stack_top > (GI_STACK_END-sizeof(hnum_t))) {
+        return g_hesabati_error = HESABATI_PERR_COMPLEX;
+    }
     *(hnum_t*)gi_stack_top = n;
     *gi_stack_types_top++ = TK_NUMBER;
     gi_stack_top += sizeof(hnum_t);
+    return 0;
 }
 
 hnum_t
@@ -397,11 +381,15 @@ hesabati_stack_popnum() {
     return *(hnum_t*)gi_stack_top;
 }
 
-void
+int
 hesabati_stack_pushd(hdouble_t n) {
+    if(gi_stack_top > (GI_STACK_END-sizeof(hdouble_t))) {
+        return g_hesabati_error = HESABATI_PERR_COMPLEX;
+    }
     *(hdouble_t*)gi_stack_top = n;
     *gi_stack_types_top++ = TK_DOUBLE;
     gi_stack_top += sizeof(hdouble_t);
+    return 0;
 }
 
 hdouble_t
@@ -443,7 +431,8 @@ hesabati_num_arith(enum HESABATI_TOKEN t) {
 
 void 
 hesabati_eval(htree_ptr_t t) {
-    if(!t) return;
+    //abort evaluation if an error is pending
+    if(g_hesabati_error || t == NULL) return;
     switch(t->type) {
         case TK_NUMBER: hesabati_stack_pushnum(t->ival); break;
         case TK_DOUBLE: hesabati_stack_pushd(t->dval); break;
@@ -471,29 +460,16 @@ hesabati_eval(htree_ptr_t t) {
 }
 
 int
-main(int argc, char **argv) {
-    tokenize_test("2+2", (enum HESABATI_TOKEN[]) {TK_NUMBER, TK_PLUS, TK_NUMBER});
-    tokenize_test("34.678+23+(68-4)", (enum HESABATI_TOKEN[]) {TK_DOUBLE, TK_PLUS,
-        TK_NUMBER, TK_PLUS, TK_PARENOPEN, TK_NUMBER, TK_MINUS, TK_NUMBER
-        ,TK_PARENCLOSE});
-#ifdef HESABATI_DEBUG
-    if(argc == 2) {
-        hesabati_printtree(hesabati_parse(argv[1]));        
-    }
-#endif
-    htree_ptr_t tr = hesabati_parse(argv[1]);
-    if(tr) {
-        hesabati_eval(tr);
-        if(*(gi_stack_types_top-1) == TK_DOUBLE) {
-            printf("%f", hesabati_stack_popd());
-        } else {
-            printf("%li", hesabati_stack_popnum());
-        }
-        printf("\n");
-        if(tr) {
-            hesabati_cuttree(tr);
-        }
-    } else if(g_hesabati_error) {
-        printf("Error occured\n");
-    }
+hesabati(const char *expression, int *type, void **store) {
+    //reset interpreter
+    gi_stack_top = gi_stack;
+    gi_stack_types_top = gi_stack_types;
+    g_hesabati_error = 0;
+    htree_ptr_t ast;
+    ast = hesabati_parse(expression);
+    hesabati_eval(ast);
+    *type = *gi_stack_types;
+    *store = gi_stack;
+    hesabati_cuttree(ast);
+    return g_hesabati_error;
 }
